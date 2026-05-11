@@ -10,8 +10,9 @@ import warnings
 import subprocess
 import socket
 import socks
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="trio")
 from typing import Optional
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="trio")
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware

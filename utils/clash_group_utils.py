@@ -1,6 +1,7 @@
 import re
 from typing import Optional
 
+
 def strip_group_decorations(text: str) -> str:
     raw = str(text or "").strip().lower()
     raw = re.sub(r'[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\ufe0f]', '', raw)
