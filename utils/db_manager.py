@@ -785,30 +785,46 @@ def update_account_push_info(emails: list, platform: str, mode: str = "overwrite
     try:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         target_platform = platform.strip().upper()
+        target_prefixes = tuple(str(e).strip() for e in emails if str(e).strip())
+        if not target_prefixes:
+            return
 
         with get_db_conn(is_write=True) as conn:
             c = get_cursor(conn)
-            for email in emails:
-                like_pattern = f"{str(email).strip()}%"
-                new_val = target_platform
+            execute_sql(c, "SELECT email, push_platform FROM accounts")
+            all_local_accounts = c.fetchall()
 
-                if mode == "sync":
-                    execute_sql(c, "SELECT push_platform FROM accounts WHERE email LIKE ?", (like_pattern,))
-                    row = c.fetchone()
-                    current_raw = row[0] if row and row[0] else ""
+            update_params = []
 
-                    if current_raw:
-                        parts = [p.strip().upper() for p in current_raw.split(',') if p.strip()]
-                        p_set = set(parts)
-                        p_set.add(target_platform)
-                        new_val = ",".join(sorted(list(p_set)))
+            for row in all_local_accounts:
+                db_email = row[0]
+                if not db_email:
+                    continue
+
+                if db_email.startswith(target_prefixes):
+                    current_raw = row[1] if row[1] else ""
+
+                    if mode == "sync":
+                        if current_raw:
+                            parts = [p.strip().upper() for p in current_raw.split(',') if p.strip()]
+                            p_set = set(parts)
+                            p_set.add(target_platform)
+                            new_val = ",".join(sorted(list(p_set)))
+                        else:
+                            new_val = target_platform
                     else:
                         new_val = target_platform
-                execute_sql(c, """
+                    update_params.append((new_val, now_str, db_email))
+
+            if update_params:
+                base_sql = """
                     UPDATE accounts 
                     SET push_platform = ?, push_time = COALESCE(push_time, ?) 
-                    WHERE email LIKE ?
-                """, (new_val, now_str, like_pattern))
+                    WHERE email = ?
+                """
+                if DB_TYPE == "mysql":
+                    base_sql = base_sql.replace('?', '%s')
+                c.executemany(base_sql, update_params)
 
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 更新推送状态失败: {e}")
