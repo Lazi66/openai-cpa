@@ -2207,7 +2207,7 @@ def get_oai_code(
                         bodyPreview = str(msg.get("bodyPreview", ""))
                         content = "\n".join([subject, bodyPreview])
                         code = ""
-                        m = re.search(r"(?<!\d)(\d{6})(?!\d)", content)
+                        m = re.search(r"(?<![\d#])(\d{6})(?!\d)", content)
                         if m:
                             code = m.group(1)
 

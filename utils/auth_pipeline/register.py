@@ -233,9 +233,8 @@ def run(
                                     break
                                 else:
                                     err_json = code_resp.json()
-                                    print(
-                                        f"[{cfg.ts()}] [WARNING] （{mask_email(email)}）无密码通道接管验证失败: {code_resp.status_code}")
-                                    print(f"[{cfg.ts()}] [INFO]（{mask_email(email)}）无密码通道准备请求新的验证码并重试...")
+                                    print(f"[{cfg.ts()}] [WARNING] （{mask_email(email)}）无密码通道接管验证失败: {code_resp.status_code}")
+                                    print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）无密码通道准备请求新的验证码并重试...")
                                     login_code = ""
                                     continue
 
@@ -780,8 +779,7 @@ def run(
                                     err_json = login_code_resp.json()
                                 except:
                                     err_json = {}
-                                print(
-                                    f"[{cfg.ts()}] [WARNING] （{mask_email(email)}）无密码通道OAuth 阶段验证失败: {login_code_resp.status_code}")
+                                print(f"[{cfg.ts()}] [WARNING] （{mask_email(email)}）无密码通道OAuth 阶段验证失败: {login_code_resp.status_code}")
                                 print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）无密码通道准备请求新的验证码并重试...")
                                 login_code_oauth = ""
                                 continue
