@@ -1733,6 +1733,152 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
             async_stop_event.set()
             break
 
+# 独立OAuth
+def handle_oauth_upgrade_result(email: str, result: Any) -> str:
+
+    if getattr(cfg, 'GLOBAL_STOP', False):
+        return "stopped"
+
+    if not result or not isinstance(result, (tuple, list)) or len(result) < 2:
+        return "failed"
+
+    token_json_str, password = result
+    if not token_json_str or token_json_str == "retry_403":
+        return "failed"
+
+    token_data = json.loads(token_json_str)
+    if "email" not in token_data:
+        token_data["email"] = email
+        token_json_str = json.dumps(token_data, ensure_ascii=False)
+
+    try:
+        db_manager.update_account_token_only(email, token_json_str)
+        print(f"[{ts()}] [SUCCESS] [提权] {mask_email(email)} 本地凭证已更新")
+    except Exception as e:
+        print(f"[{ts()}] [ERROR] 本地库更新失败: {e}")
+
+    cpa_upload = getattr(cfg, 'ENABLE_CPA_MODE', False)
+    sub2api_upload = getattr(cfg, 'ENABLE_SUB2API_MODE', False)
+
+    if cpa_upload:
+        current_status = token_data.get("status", "")
+        if current_status in ["image2api", "仅注册成功"]:
+            print(f"[{ts()}] [INFO] 当前账号状态为 [{current_status}]，跳过云端同步。")
+        else:
+            success, up_msg = upload_to_cpa_integrated(token_data, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)
+            if success:
+                print(f"[{ts()}] [SUCCESS] [提权] 凭证 {mask_email(email)} 已同步至 CPA 云端！")
+            else:
+                print(f"[{ts()}] [ERROR] [提权] 云端上传失败: {up_msg}")
+
+    elif sub2api_upload:
+        client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY)
+        current_status = token_data.get("status", "")
+        if current_status in ["image2api", "仅注册成功"]:
+            print(f"[{ts()}] [INFO] 当前为 [{current_status}]，跳过云端补货推送。")
+        else:
+            if hasattr(client, "add_account"):
+                ok, msg = client.add_account(token_data)
+                if ok:
+                    print(f"[{ts()}] [SUCCESS] [提权] 凭证 {mask_email(email)} 已同步至 Sub2API")
+                else:
+                    print(f"[{ts()}] [ERROR] [提权] Sub2API 补货入库失败: {msg}")
+
+    try:
+        safe_pwd = str(password) if password else ""
+        orig_masked_email = mask_email(email, force_mask=True)
+        orig_masked_password = f"{safe_pwd[:2]}****{safe_pwd[-2:]}" if len(safe_pwd) > 4 else "****"
+
+        final_email = orig_masked_email if getattr(cfg, 'TG_BOT', {}).get("mask_email", False) else email
+        final_password = orig_masked_password if getattr(cfg, 'TG_BOT', {}).get("mask_password", False) else safe_pwd
+
+        template_str = getattr(cfg, 'TG_BOT', {}).get("template_success", "成功: {email} / {password} 时间: {time}")
+        beijing_tz = timezone(timedelta(hours=8))
+        current_time = datetime.now(beijing_tz).strftime("%Y-%m-%d %H:%M:%S")
+        success_text = template_str.format(email=final_email, password=final_password, time=current_time)
+        success_text = "🚀 [OAuth提权] " + success_text
+        send_tg_msg_sync(success_text)
+    except Exception as e:
+        pass
+
+    return "success"
+
+
+def run_oauth_only_and_sync(email, password, proxy, args, access_token=""):
+    proxy = format_docker_url(proxy)
+    if not smart_switch_node(proxy):
+        print(f"[{ts()}] [WARNING] {proxy} 节点切换失败...")
+
+    try:
+        from utils.auth_pipeline.register import run_oauth_only
+        # 关键修改：把 access_token 传给底层函数
+        result = run_oauth_only(email, password, proxy, access_token)
+    except Exception as e:
+        print(f"[{ts()}] [ERROR] 提权线程发生异常 {e}")
+        import traceback
+        traceback.print_exc()
+        result = None
+    return handle_oauth_upgrade_result(email, result)
+
+
+def oauth_upgrade_main_loop(args, target_accounts: list, stop_event: threading.Event, executor=None):
+    print(f"\n[{ts()}] [系统] >>> 启动独立 OAuth 批量提取任务 <<<")
+    print(f"[{ts()}] [系统] 目标队列共计 {len(target_accounts)} 个半成品账号待处理。")
+
+    max_workers = getattr(cfg, 'REG_THREADS', 4)
+    success_count = 0
+
+    def _worker(acc):
+        if stop_event.is_set() or getattr(cfg, 'GLOBAL_STOP', False):
+            return "stopped"
+        acc_token = acc.get('access_token', '')
+
+        if cfg.is_raw_proxy_pool_enabled():
+            borrowed_generation, p = cfg.unpack_proxy_queue_item(cfg.PROXY_QUEUE.get())
+            try:
+                return run_oauth_only_and_sync(acc['email'], acc['password'], p, args, acc_token)
+            finally:
+                if cfg.should_return_pooled_proxy(borrowed_generation):
+                    cfg.PROXY_QUEUE.put(cfg.make_proxy_queue_item(p, borrowed_generation))
+                    cfg.PROXY_QUEUE.task_done()
+        elif cfg._clash_enable and getattr(cfg, '_clash_pool_mode', False):
+            p = cfg.PROXY_QUEUE.get()
+            proxy_url = p[-1] if isinstance(p, tuple) else p
+            try:
+                return run_oauth_only_and_sync(acc['email'], acc['password'], proxy_url, args, acc_token)
+            finally:
+                cfg.PROXY_QUEUE.put(p)
+                cfg.PROXY_QUEUE.task_done()
+        else:
+            return run_oauth_only_and_sync(acc['email'], acc['password'], args.proxy, args, acc_token)
+
+    try:
+        if executor is not None:
+            futures = []
+            for acc in target_accounts:
+                if stop_event.is_set() or getattr(cfg, 'GLOBAL_STOP', False):
+                    break
+                futures.append(executor.submit(_worker, acc))
+
+            for f in futures:
+                if f.result() == "success":
+                    success_count += 1
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = []
+                for acc in target_accounts:
+                    if stop_event.is_set() or getattr(cfg, 'GLOBAL_STOP', False):
+                        break
+                    futures.append(ex.submit(_worker, acc))
+
+                for f in futures:
+                    if f.result() == "success":
+                        success_count += 1
+
+    except Exception as e:
+        print(f"[{ts()}] [ERROR] 提权调度发生异常: {e}")
+
+    print(f"\n[{ts()}] [系统] <<< OAuth 批量提取任务结束，共成功提取 {success_count} 个 >>>")
 
 def main() -> None:
     reload_all_configs()
@@ -1950,6 +2096,39 @@ class RegEngine:
             elif clash_proxy_item is not None:
                 cfg.PROXY_QUEUE.put(clash_proxy_item)
                 cfg.PROXY_QUEUE.task_done()
+
+    def start_oauth_upgrade(self, args, target_accounts: list):
+        if self.is_running():
+            return False, "引擎当前正在运行其他任务，请先点击停止"
+
+        self._force_stopped = False
+        cfg.GLOBAL_STOP = False
+        cfg.POOL_EXHAUSTED = False
+        self.thread_stop_event = threading.Event()
+
+        current_evt = self.thread_stop_event
+        args.check_stop = lambda: current_evt.is_set()
+
+        self._ensure_executor()
+        self.current_thread = threading.Thread(
+            target=self._run_oauth_upgrade_in_thread,
+            args=(args, target_accounts),
+            daemon=True,
+        )
+        self.current_thread.start()
+        return True, "提权任务启动成功"
+
+    def _run_oauth_upgrade_in_thread(self, args, target_accounts):
+        self._perform_initial_cleanup()
+        try:
+            oauth_upgrade_main_loop(args, target_accounts, self.thread_stop_event, executor=self._executor)
+        except Exception as e:
+            print(f"[{ts()}] [CRITICAL] 提权引擎主线程发生崩溃: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._finalize_thread_run()
+
 
 
 if __name__ == "__main__":
