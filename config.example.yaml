@@ -51,6 +51,7 @@ admin_auth: ""
 # [项目专属内存池邮箱配置]
 openai_cpa:
   webhook_secret: "wenfxl_secret_key"
+  use_original_password_flow: false
 
 # [模式 "imap" 专属配置] (CF Catch-all 转发接收端)
 imap:
@@ -270,6 +271,7 @@ cpa_mode:
   threads: 10
   #是否保存仅注册账号，用于后续手动登录或者其他作用
   retain_reg_only: false
+  auto_re_oauth: false
 
 # SUB2APIA配置 参数含义跟CPA相同
 sub2api_mode:
@@ -291,10 +293,11 @@ sub2api_mode:
   account_rate_multiplier: 1.0
   account_group_ids: ""
   enable_ws_mode: true
-  test_model: "gpt-5.2"
+  test_model: "gpt-5.4-mini"
   default_proxy: ""
   #是否保存仅注册账号，用于后续手动登录或者其他作用
   retain_reg_only: false
+  auto_re_oauth: false
 
 image2api_mode:
   enable: false
@@ -318,6 +321,7 @@ hero_sms:
   max_tries: 3
   poll_timeout_sec: 120
   reuse_max: 2
+  use_proxy: false
 
 smsbower:
   enabled: false
@@ -334,6 +338,7 @@ smsbower:
   poll_timeout_sec: 120
   reuse_max: 2
   operator: ""
+  use_proxy: false
 
 fivesim:
   enabled: false
@@ -350,6 +355,7 @@ fivesim:
   poll_timeout_sec: 180
   reuse_max: 2
   operator: ""
+  use_proxy: false
 
 # 常规量产模式专属配置
 normal_mode:
@@ -381,6 +387,7 @@ database:
 
 team_mode:
   enable: false
+  overspeed: false
 
 # WEB端密码
 web_password: admin
@@ -389,6 +396,7 @@ cf_api_email:
 #CF KEY
 cf_api_key:
 max_log_lines: "500"
+cluster_upload_timeout_sec: "15"
 #集群总控
 cluster_node_name: "NODE-1"
 cluster_master_url: ""

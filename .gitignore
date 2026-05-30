@@ -27,6 +27,11 @@ test.py
 test_register.py
 test_register2.py
 test_register3.py
+test_register4.py
+test_register5.py
 aitest.py
 register.py.bak
+.codex/
+AGENTS.md
+stop_openai_cpa.ps1
 code.py

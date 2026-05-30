@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(icacls \"D:/openai-cpa-new/utils/auth_core.pyd\")",
+      "Bash(tasklist)",
+      "Bash(findstr python:*)",
+      "Bash(python .wfxl_openai_regst.py)",
+      "Bash(ls -la *.py)",
+      "Bash(python wfxl_openai_regst.py)",
+      "Bash(python -c \"import sys; print\\(sys.path\\)\")",
+      "Bash(cd /d D:openai-cpa-new)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''.''\\); import utils.system_maintenance; print\\(''Import successful''\\)\")"
+    ]
+  }
+}
